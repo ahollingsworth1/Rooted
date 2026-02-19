@@ -8,7 +8,6 @@ import { useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -16,7 +15,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 
 export default function LoginScreen() {
@@ -58,11 +57,6 @@ export default function LoginScreen() {
 
         {/* Logo */}
         <View style={styles.logoSection}>
-          <Image
-            source={require('@/assets/images/root_image.png')}
-            style={styles.logo}
-            resizeMode="contain"
-          />
           <Text style={styles.appName}>rooted</Text>
           <Text style={styles.tagline}>A devotional for two</Text>
         </View>

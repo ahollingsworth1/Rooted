@@ -25,7 +25,7 @@ export default function RootedHeader({ subtitle }: RootedHeaderProps) {
 
 const styles = StyleSheet.create({
   container: {
-    paddingTop: 30,
+    paddingTop: 100,
     paddingBottom: 16,
     paddingHorizontal: 24,
     backgroundColor: '#FAF6F0',
