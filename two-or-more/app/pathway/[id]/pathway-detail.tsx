@@ -192,7 +192,7 @@ export default function PathwayDetailScreen() {
         )}
 
         {/* What you'll explore */}
-        <Text style={styles.sectionLabel}>What You'll Explore</Text>
+        <Text style={styles.sectionLabel}>What You&apos;ll Explore</Text>
         <View style={styles.previewCard}>
           {sampleDays.map((day, i) => (
             <View key={i} style={[styles.previewRow, i < sampleDays.length - 1 && styles.previewRowBorder]}>

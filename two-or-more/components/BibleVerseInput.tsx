@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   TextInput,
@@ -88,10 +88,10 @@ export default function BibleVerseInput() {
         // Remove any markdown formatting and parse JSON
         const cleanContent = content.replace(/```json\n?|\n?```/g, '').trim();
         questions = JSON.parse(cleanContent);
-      } catch (parseError) {
+      } catch {
         // If JSON parsing fails, try to extract questions from text
-        const lines = content.split('\n').filter(line => line.trim().length > 0);
-        questions = lines.slice(0, 3).map(line => line.replace(/^\d+\.\s*/, '').trim());
+        const lines = content.split('\n').filter((line: string) => line.trim().length > 0);
+        questions = lines.slice(0, 3).map((line: string) => line.replace(/^\d+\.\s*/, '').trim());
       }
 
       // Create discussion question objects
@@ -155,7 +155,7 @@ export default function BibleVerseInput() {
             : verse
         )
       );
-    } catch (error) {
+    } catch {
       setVerses(prev =>
         prev.map(verse =>
           verse.id === newVerse.id

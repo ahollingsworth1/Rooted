@@ -1,3 +1,4 @@
+import { usePushNotifications } from '@/hooks/usePushNotifications';
 import { auth } from '@/lib/firebase';
 import { Redirect, Stack } from 'expo-router';
 import { onAuthStateChanged, User } from 'firebase/auth';
@@ -5,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { View } from 'react-native';
 
 export default function RootLayout() {
-  usePushNotifications()
+  usePushNotifications();
   const [user, setUser] = useState<User | null | undefined>(undefined);
   const [ready, setReady] = useState(false);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);

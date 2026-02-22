@@ -1,9 +1,11 @@
 import { auth, db } from '@/lib/firebase';
 import { doc, updateDoc } from 'firebase/firestore';
-import * as Device from 'expo-device';
-import * as Notifications from 'expo-notifications';
 import { useEffect, useRef } from 'react';
 import { Platform } from 'react-native';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const Device = require('expo-device');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const Notifications = require('expo-notifications');
 
 // Configure how notifications appear when app is foregrounded
 Notifications.setNotificationHandler({
@@ -15,19 +17,19 @@ Notifications.setNotificationHandler({
 });
 
 export function usePushNotifications() {
-  const notificationListener = useRef<any>();
-  const responseListener = useRef<any>();
+  const notificationListener = useRef<ReturnType<typeof Notifications.addNotificationReceivedListener> | undefined>(undefined);
+  const responseListener = useRef<ReturnType<typeof Notifications.addNotificationResponseReceivedListener> | undefined>(undefined);
 
   useEffect(() => {
     registerForPushNotifications();
 
     // Listen for notifications while app is open
-    notificationListener.current = Notifications.addNotificationReceivedListener(notification => {
+    notificationListener.current = Notifications.addNotificationReceivedListener((notification: { request: { content: { data?: unknown } } }) => {
       console.log('Notification received:', notification);
     });
 
     // Listen for user tapping a notification
-    responseListener.current = Notifications.addNotificationResponseReceivedListener(response => {
+    responseListener.current = Notifications.addNotificationResponseReceivedListener((response: { notification: { request: { content: { data: unknown } } } }) => {
       const data = response.notification.request.content.data;
       // Could route here if needed: router.push('/(tabs)/pathways')
       console.log('Notification tapped:', data);

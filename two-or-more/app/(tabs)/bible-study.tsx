@@ -38,7 +38,7 @@ export default function BibleStudyScreen() {
         </View>
       ) : (
         <View style={styles.emptyCard}>
-          <Text style={styles.emptyText}>Lent hasn't started yet — check back on Ash Wednesday!</Text>
+          <Text style={styles.emptyText}>Lent hasn&apos;t started yet — check back on Ash Wednesday!</Text>
         </View>
       )}
 

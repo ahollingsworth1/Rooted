@@ -14,7 +14,7 @@ export default function WelcomeScreen() {
           <Text style={styles.dividerSymbol}>✦</Text>
           <View style={styles.dividerLine} />
         </View>
-        <Text style={styles.verse}>"Two are better than one."</Text>
+        <Text style={styles.verse}>&quot;Two are better than one.&quot;</Text>
         <Text style={styles.verseRef}>Ecclesiastes 4:9</Text>
       </View>
 

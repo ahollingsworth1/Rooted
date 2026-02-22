@@ -297,13 +297,13 @@ Respond ONLY as JSON: {"commonGround": "...", "questions": ["...", "...", "..."]
 
         {/* Prompt */}
         <View style={styles.promptBlock}>
-          <Text style={[styles.promptLabel, { color: pathwayColor }]}>Today's Prompt</Text>
+          <Text style={[styles.promptLabel, { color: pathwayColor }]}>Today&apos;s Prompt</Text>
           <Text style={styles.promptText}>{today.prompt}</Text>
         </View>
 
         {/* Devotional */}
         <View style={styles.devotionalBlock}>
-          <Text style={[styles.devotionalLabel, { color: pathwayColor }]}>Today's Devotional</Text>
+          <Text style={[styles.devotionalLabel, { color: pathwayColor }]}>Today&apos;s Devotional</Text>
           <Text style={styles.devotionalText}>{devotionalParagraphs[0]}</Text>
           {showFullDevotional && devotionalParagraphs.slice(1).map((para, i) => (
             <Text key={i} style={styles.devotionalText}>{para}</Text>

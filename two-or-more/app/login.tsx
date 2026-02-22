@@ -113,7 +113,7 @@ export default function LoginScreen() {
         </View>
 
         <Text style={styles.footer}>
-          "Two are better than one." — Ecclesiastes 4:9
+          &quot;Two are better than one.&quot; — Ecclesiastes 4:9
         </Text>
 
       </ScrollView>

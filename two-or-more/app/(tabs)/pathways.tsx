@@ -60,7 +60,7 @@ export default function PathwaysScreen() {
   };
 
   const goToDetail = (pathway: Pathway) => {
-    router.push(`/pathway/${pathway.id}`);
+    router.push({ pathname: '/pathway/[id]/pathway-detail', params: { id: pathway.id } });
   };
 
   const confirmPathway = async () => {
@@ -144,7 +144,7 @@ export default function PathwaysScreen() {
       {pendingPathway && isProposer && (
         <View style={styles.waitingCard}>
           <Text style={styles.waitingCardText}>
-            ⏳ Waiting for your partner to accept "{pendingPathway.title}"...
+            ⏳ Waiting for your partner to accept &quot;{pendingPathway.title}&quot;...
           </Text>
         </View>
       )}
