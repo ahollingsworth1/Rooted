@@ -1,7 +1,6 @@
 import { HapticTab } from '@/components/HapticTab';
-import { IconSymbol } from '@/components/ui/IconSymbol';
 import { Tabs } from 'expo-router';
-import { Platform } from 'react-native';
+import { Platform, Text } from 'react-native';
 
 export default function TabLayout() {
   return (
@@ -15,6 +14,7 @@ export default function TabLayout() {
           backgroundColor: '#FAF6F0',
           borderTopColor: '#E8D9C5',
           borderTopWidth: 1,
+          paddingTop: 4,
           ...Platform.select({
             ios: { position: 'absolute' },
             default: {},
@@ -30,23 +30,40 @@ export default function TabLayout() {
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={26} name="house.fill" color={color} />,
+          tabBarIcon: ({ focused }) => (
+            <Text style={{ fontSize: 20, opacity: focused ? 1 : 0.5 }}>🏠</Text>
+          ),
         }}
       />
       <Tabs.Screen
-        name="bible-study"
+        name="pathways"
         options={{
-          title: 'Study',
-          tabBarIcon: ({ color }) => <IconSymbol size={26} name="book.fill" color={color} />,
+          title: 'Journeys',
+          tabBarIcon: ({ focused }) => (
+            <Text style={{ fontSize: 20, opacity: focused ? 1 : 0.5 }}>🌿</Text>
+          ),
         }}
       />
       <Tabs.Screen
         name="reflect"
         options={{
           title: 'Reflect',
-          tabBarIcon: ({ color }) => <IconSymbol size={26} name="heart.fill" color={color} />,
+          tabBarIcon: ({ focused }) => (
+            <Text style={{ fontSize: 20, opacity: focused ? 1 : 0.5 }}>✍️</Text>
+          ),
         }}
       />
+      <Tabs.Screen
+        name="bible-verses"
+        options={{
+          title: 'Verses',
+          tabBarIcon: ({ focused }) => (
+            <Text style={{ fontSize: 20, opacity: focused ? 1 : 0.5 }}>🕊️</Text>
+          ),
+        }}
+      />
+      <Tabs.Screen name="explore" options={{ href: null }} />
+      <Tabs.Screen name="bible-study" options={{ href: null }} />
     </Tabs>
   );
 }

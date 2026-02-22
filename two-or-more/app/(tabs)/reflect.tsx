@@ -1,13 +1,7 @@
 import RootedHeader from '@/components/RootedHeader';
-import { LENT_DEVOTIONALS } from '@/constants/lentDevotionals';
-import { getTodayLentDay } from '@/constants/lentPlan';
+import { getPathwayById, PathwayDay } from '@/constants/pathways';
 import { auth, db } from '@/lib/firebase';
-import {
-  doc,
-  getDoc,
-  onSnapshot,
-  setDoc,
-} from 'firebase/firestore';
+import { doc, getDoc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -28,10 +22,6 @@ interface Reflection {
   userName: string;
 }
 
-interface DayReflections {
-  [userId: string]: Reflection;
-}
-
 interface AISummary {
   commonGround: string;
   questions: string[];
@@ -46,37 +36,27 @@ export default function ReflectScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [coupleId, setCoupleId] = useState<string | null>(null);
-  const [partnerId, setPartnerId] = useState<string | null>(null);
   const [verseText, setVerseText] = useState<string | null>(null);
   const [showFullDevotional, setShowFullDevotional] = useState(false);
+  const [today, setToday] = useState<PathwayDay | null>(null);
+  const [pathwayColor, setPathwayColor] = useState('#A0522D');
+  const [pathwayTitle, setPathwayTitle] = useState('');
+  const [noPathway, setNoPathway] = useState(false);
 
-  const today = getTodayLentDay();
   const user = auth.currentUser;
 
-  // Fetch verse text
+  // Load couple data and active pathway
   useEffect(() => {
-    if (!today) return;
-    fetch(`https://bible-api.com/${encodeURIComponent(today.verse)}`)
-      .then(res => res.json())
-      .then(data => setVerseText(data.text?.trim()))
-      .catch(() => setVerseText(null));
-  }, [today?.verse]);
-
-  // Load couple data FIRST, then start snapshot listener with resolved IDs
-  useEffect(() => {
-    if (!user || !today) return;
-
+    if (!user) return;
     let cleanup: (() => void) | undefined;
 
-    const fetchCoupleData = async () => {
+    const init = async () => {
       const userDoc = await getDoc(doc(db, 'users', user.uid));
       let resolvedCoupleId = user.uid;
-      let resolvedPartnerId: string | null = null;
 
       if (userDoc.exists()) {
-        const data = userDoc.data();
-        resolvedCoupleId = data.coupleId || user.uid;
-        resolvedPartnerId = data.partnerId || null;
+        const userData = userDoc.data();
+        resolvedCoupleId = userData.coupleId || user.uid;
       } else {
         await setDoc(doc(db, 'users', user.uid), {
           uid: user.uid,
@@ -86,52 +66,74 @@ export default function ReflectScreen() {
         });
       }
 
-      console.log('=== COUPLE DATA ===');
-      console.log('resolvedCoupleId:', resolvedCoupleId);
-      console.log('resolvedPartnerId:', resolvedPartnerId);
-
       setCoupleId(resolvedCoupleId);
-      setPartnerId(resolvedPartnerId);
 
-      // Start listener only after we have the correct IDs
-      const reflectionRef = doc(db, 'reflections', `${resolvedCoupleId}_day${today.day}`);
-      const unsubscribe = onSnapshot(reflectionRef, (snapshot) => {
-        console.log('=== SNAPSHOT FIRED ===');
-        console.log('snapshot exists:', snapshot.exists());
+      // Load active pathway from couple doc
+      if (resolvedCoupleId !== user.uid) {
+        const coupleDoc = await getDoc(doc(db, 'couples', resolvedCoupleId));
+        if (coupleDoc.exists()) {
+          const coupleData = coupleDoc.data();
+          const pathwayId = coupleData.activePathwayId;
+          const currentDay = coupleData.activePathwayDay || 1;
 
-        if (snapshot.exists()) {
-          const data = snapshot.data() as DayReflections & { aiSummary?: AISummary };
-          console.log('doc keys:', Object.keys(data));
-          console.log('my uid:', user.uid);
-          console.log('has my reflection:', !!data[user.uid]);
-          console.log('resolvedPartnerId in snapshot:', resolvedPartnerId);
-          console.log('has partner reflection:', resolvedPartnerId ? !!data[resolvedPartnerId] : 'NO PARTNER ID');
-          console.log('has aiSummary:', !!data.aiSummary);
-
-          if (data[user.uid]) setSavedReflection(data[user.uid]);
-
-          if (resolvedPartnerId && data[resolvedPartnerId]) {
-            console.log('Setting partner submitted TRUE');
-            setPartnerSubmitted(true);
-            setPartnerReflection(data[resolvedPartnerId]);
+          if (pathwayId) {
+            const pathway = getPathwayById(pathwayId);
+            if (pathway) {
+              const dayData = pathway.days[currentDay - 1];
+              setToday(dayData || null);
+              setPathwayColor(pathway.color);
+              setPathwayTitle(pathway.title);
+            }
+          } else {
+            setNoPathway(true);
           }
-
-          if (data.aiSummary) setAiSummary(data.aiSummary);
+        } else {
+          setNoPathway(true);
         }
+      } else {
+        setNoPathway(true);
+      }
+
+      // Listen for reflections
+      const reflectionId = `${resolvedCoupleId}_day${(await getDoc(doc(db, 'couples', resolvedCoupleId))).data()?.activePathwayDay || 1}`;
+      const reflectionRef = doc(db, 'reflections', reflectionId);
+      const unsubscribe = onSnapshot(reflectionRef, (snapshot) => {
+        if (!snapshot.exists()) return;
+        const data = snapshot.data() as Record<string, any>;
+
+        const myData = data[user.uid];
+        if (myData?.text) setSavedReflection(myData);
+
+        const partnerKey = Object.keys(data).find(
+          k => k !== user.uid && k !== 'aiSummary'
+        );
+        if (partnerKey && data[partnerKey]?.text) {
+          setPartnerSubmitted(true);
+          setPartnerReflection(data[partnerKey]);
+        }
+
+        if (data.aiSummary) setAiSummary(data.aiSummary);
       });
 
       cleanup = unsubscribe;
     };
 
-    fetchCoupleData();
+    init();
     return () => cleanup?.();
-  }, [user, today]);
+  }, [user]);
 
-  // Auto-generate summary when both have submitted and no summary yet
+  // Fetch verse text
   useEffect(() => {
-    console.log('=== SUMMARY CHECK ===', { savedReflection: !!savedReflection, partnerReflection: !!partnerReflection, aiSummary: !!aiSummary, isGeneratingSummary });
+    if (!today?.verse) return;
+    fetch(`https://bible-api.com/${encodeURIComponent(today.verse)}`)
+      .then(res => res.json())
+      .then(data => setVerseText(data.text?.trim()))
+      .catch(() => setVerseText(null));
+  }, [today?.verse]);
+
+  // Auto-generate summary when both submitted
+  useEffect(() => {
     if (savedReflection && partnerReflection && !aiSummary && !isGeneratingSummary) {
-      console.log('TRIGGERING SUMMARY GENERATION');
       generateAISummary(savedReflection, partnerReflection);
     }
   }, [savedReflection, partnerReflection, aiSummary]);
@@ -140,7 +142,9 @@ export default function ReflectScreen() {
     if (!user || !today || !coupleId || !myReflection.trim()) return;
     setIsSaving(true);
     try {
-      const reflectionRef = doc(db, 'reflections', `${coupleId}_day${today.day}`);
+      const coupleDoc = await getDoc(doc(db, 'couples', coupleId));
+      const currentDay = coupleDoc.data()?.activePathwayDay || 1;
+      const reflectionRef = doc(db, 'reflections', `${coupleId}_day${currentDay}`);
       const userName = user.displayName || user.email?.split('@')[0] || 'Friend';
       await setDoc(reflectionRef, {
         [user.uid]: { text: myReflection.trim(), submittedAt: new Date().toISOString(), userName },
@@ -156,15 +160,16 @@ export default function ReflectScreen() {
     if (!coupleId || !today) return;
     setIsGeneratingSummary(true);
     try {
-      const prompt = today.theme.includes('Rest')
-        ? `Two Christian partners completed a week of Lent devotionals. Here are their weekly reflections:
+      const isRestDay = today.theme.toLowerCase().includes('rest');
+      const prompt = isRestDay
+        ? `Two Christian partners completed a week of devotionals on "${pathwayTitle}". Here are their reflections:
 Partner 1 (${myRef.userName}): "${myRef.text}"
 Partner 2 (${partnerRef.userName}): "${partnerRef.text}"
 This is a rest/reflection day. Please:
 1. Write 2-3 sentences summarizing what they have in common spiritually this week
 2. Generate 4 deeper discussion questions to help them grow together
 Respond ONLY as JSON: {"commonGround": "...", "questions": ["...", "...", "...", "..."]}`
-        : `Two Christian partners reflected on today's Lent devotional.
+        : `Two Christian partners reflected on today's devotional from the journey "${pathwayTitle}".
 Theme: ${today.theme}
 Verse: ${today.verse}
 Prompt: ${today.prompt}
@@ -175,19 +180,35 @@ Please:
 2. Generate 3 discussion questions to help them go deeper together
 Respond ONLY as JSON: {"commonGround": "...", "questions": ["...", "...", "..."]}`;
 
-      console.log('Calling OpenAI...');
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.EXPO_PUBLIC_OPENAI_API_KEY}` },
-        body: JSON.stringify({ model: 'gpt-3.5-turbo', messages: [{ role: 'user', content: prompt }], temperature: 0.7 }),
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${process.env.EXPO_PUBLIC_OPENAI_API_KEY}`,
+        },
+        body: JSON.stringify({
+          model: 'gpt-3.5-turbo',
+          messages: [{ role: 'user', content: prompt }],
+          temperature: 0.7,
+        }),
       });
+
       const data = await response.json();
-      console.log('OpenAI raw response:', JSON.stringify(data));
-      const parsed: AISummary = JSON.parse(data.choices[0].message.content);
-      const reflectionRef = doc(db, 'reflections', `${coupleId}_day${today.day}`);
+
+      if (!data.choices || !data.choices[0]) {
+        console.error('No choices in OpenAI response:', data);
+        return;
+      }
+
+      const raw = data.choices[0].message.content;
+      const clean = raw.replace(/```json|```/g, '').trim();
+      const parsed: AISummary = JSON.parse(clean);
+
+      const coupleDoc = await getDoc(doc(db, 'couples', coupleId));
+      const currentDay = coupleDoc.data()?.activePathwayDay || 1;
+      const reflectionRef = doc(db, 'reflections', `${coupleId}_day${currentDay}`);
       await setDoc(reflectionRef, { aiSummary: parsed }, { merge: true });
       setAiSummary(parsed);
-      console.log('Summary saved!');
     } catch (e) {
       console.error('Summary generation failed:', e);
     } finally {
@@ -195,28 +216,71 @@ Respond ONLY as JSON: {"commonGround": "...", "questions": ["...", "...", "..."]
     }
   };
 
-  if (!today) {
+  const advanceToNextDay = async () => {
+    if (!coupleId || !today) return;
+    try {
+      const coupleDoc = await getDoc(doc(db, 'couples', coupleId));
+      const coupleData = coupleDoc.data();
+      const currentDay = coupleData?.activePathwayDay || 1;
+      const pathway = getPathwayById(coupleData?.activePathwayId);
+      if (!pathway) return;
+
+      if (currentDay < pathway.duration) {
+        await updateDoc(doc(db, 'couples', coupleId), {
+          activePathwayDay: currentDay + 1,
+        });
+        const nextDay = pathway.days[currentDay];
+        setToday(nextDay);
+        setSavedReflection(null);
+        setPartnerReflection(null);
+        setPartnerSubmitted(false);
+        setAiSummary(null);
+        setMyReflection('');
+      } else {
+        Alert.alert('Journey Complete! 🎉', 'You have completed this pathway together. Visit the Journeys tab to begin a new one!');
+      }
+    } catch (e) {
+      Alert.alert('Error', 'Could not advance to next day.');
+    }
+  };
+
+  // No partner linked yet
+  if (noPathway) {
     return (
       <View style={styles.screen}>
-        <RootedHeader />
-        <Text style={styles.emptyText}>Lent hasn't started yet — check back on Ash Wednesday!</Text>
+        <RootedHeader subtitle="Daily Reflection" />
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyIcon}>🌿</Text>
+          <Text style={styles.emptyTitle}>No Active Journey</Text>
+          <Text style={styles.emptyText}>
+            Head to the Journeys tab to choose a pathway and invite your partner to begin together.
+          </Text>
+        </View>
       </View>
     );
   }
 
-  const devotional = LENT_DEVOTIONALS[today.day];
-  const devotionalParagraphs = devotional ? devotional.split('\n\n') : [];
+  if (!today) {
+    return (
+      <View style={styles.screen}>
+        <RootedHeader />
+        <ActivityIndicator color="#A0522D" style={{ marginTop: 40 }} />
+      </View>
+    );
+  }
+
+  const devotionalParagraphs = today.devotional.split('\n\n');
   const bothSubmitted = !!savedReflection && partnerSubmitted;
 
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: '#FAF6F0' }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView style={styles.screen} contentContainerStyle={styles.content}>
+      <ScrollView style={styles.screen} contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
 
-        <RootedHeader subtitle="40 Days Together" />
+        <RootedHeader subtitle={pathwayTitle} />
 
         {/* Day tag */}
         <View style={styles.dayTagRow}>
-          <View style={styles.dayTag}>
+          <View style={[styles.dayTag, { backgroundColor: pathwayColor }]}>
             <Text style={styles.dayTagText}>Day {today.day}</Text>
           </View>
           <Text style={styles.themeText}>{today.theme}</Text>
@@ -224,46 +288,40 @@ Respond ONLY as JSON: {"commonGround": "...", "questions": ["...", "...", "..."]
 
         {/* Verse block */}
         <View style={styles.verseBlock}>
-          <View style={styles.verseAccent} />
+          <View style={[styles.verseAccent, { backgroundColor: pathwayColor }]} />
           <View style={styles.verseContent}>
-            <Text style={styles.verseRef}>{today.verse}</Text>
+            <Text style={[styles.verseRef, { color: pathwayColor }]}>{today.verse}</Text>
             {verseText && <Text style={styles.verseFullText}>{verseText}</Text>}
           </View>
         </View>
 
         {/* Prompt */}
         <View style={styles.promptBlock}>
-          <Text style={styles.promptLabel}>Today's Prompt</Text>
+          <Text style={[styles.promptLabel, { color: pathwayColor }]}>Today's Prompt</Text>
           <Text style={styles.promptText}>{today.prompt}</Text>
         </View>
 
         {/* Devotional */}
-        {devotional && (
-          <View style={styles.devotionalBlock}>
-            <Text style={styles.devotionalLabel}>Today's Devotional</Text>
-            <Text style={styles.devotionalText}>{devotionalParagraphs[0]}</Text>
-            {showFullDevotional && devotionalParagraphs.slice(1).map((para, i) => (
-              <Text key={i} style={styles.devotionalText}>{para}</Text>
-            ))}
-            <TouchableOpacity
-              style={styles.readMoreBtn}
-              onPress={() => setShowFullDevotional(!showFullDevotional)}
-            >
-              <Text style={styles.readMoreText}>
-                {showFullDevotional ? 'Show less ↑' : 'Continue reading ↓'}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        )}
+        <View style={styles.devotionalBlock}>
+          <Text style={[styles.devotionalLabel, { color: pathwayColor }]}>Today's Devotional</Text>
+          <Text style={styles.devotionalText}>{devotionalParagraphs[0]}</Text>
+          {showFullDevotional && devotionalParagraphs.slice(1).map((para, i) => (
+            <Text key={i} style={styles.devotionalText}>{para}</Text>
+          ))}
+          <TouchableOpacity style={styles.readMoreBtn} onPress={() => setShowFullDevotional(!showFullDevotional)}>
+            <Text style={[styles.readMoreText, { color: pathwayColor }]}>
+              {showFullDevotional ? 'Show less ↑' : 'Continue reading ↓'}
+            </Text>
+          </TouchableOpacity>
+        </View>
 
-        {/* Divider */}
         <View style={styles.dividerRow}>
           <View style={styles.dividerLine} />
           <Text style={styles.dividerSymbol}>✦</Text>
           <View style={styles.dividerLine} />
         </View>
 
-        {/* My Reflection */}
+        {/* My reflection */}
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionLabel}>My Reflection</Text>
           {savedReflection && (
@@ -296,7 +354,7 @@ Respond ONLY as JSON: {"commonGround": "...", "questions": ["...", "...", "..."]
                 textAlignVertical="top"
               />
               <TouchableOpacity
-                style={[styles.button, !myReflection.trim() && styles.buttonDisabled]}
+                style={[styles.button, { backgroundColor: pathwayColor }, !myReflection.trim() && styles.buttonDisabled]}
                 onPress={saveReflection}
                 disabled={!myReflection.trim() || isSaving}
               >
@@ -320,10 +378,9 @@ Respond ONLY as JSON: {"commonGround": "...", "questions": ["...", "...", "..."]
           </View>
         )}
 
-        {/* Generating indicator */}
         {isGeneratingSummary && (
           <View style={styles.generatingCard}>
-            <ActivityIndicator color="#A0522D" style={{ marginRight: 12 }} />
+            <ActivityIndicator color={pathwayColor} style={{ marginRight: 12 }} />
             <Text style={styles.generatingText}>Preparing your shared summary...</Text>
           </View>
         )}
@@ -337,27 +394,32 @@ Respond ONLY as JSON: {"commonGround": "...", "questions": ["...", "...", "..."]
               <View style={styles.dividerLine} />
             </View>
 
-            <View style={styles.summaryCard}>
-              <Text style={styles.summaryEyebrow}>Both of you have reflected</Text>
+            <View style={[styles.summaryCard, { borderColor: pathwayColor }]}>
+              <Text style={[styles.summaryEyebrow, { color: pathwayColor }]}>Both of you have reflected</Text>
               <Text style={styles.summaryTitle}>
-                {today.theme.includes('Rest') ? 'Your Week Together' : 'What God Is Doing In You Both'}
+                {today.theme.toLowerCase().includes('rest') ? 'Your Week Together' : 'What God Is Doing In You Both'}
               </Text>
-
-              <Text style={styles.summaryLabel}>What you have in common</Text>
+              <Text style={[styles.summaryLabel, { color: pathwayColor }]}>What you have in common</Text>
               <Text style={styles.summaryText}>{aiSummary.commonGround}</Text>
-
-              <Text style={styles.summaryLabel}>Discuss together</Text>
+              <Text style={[styles.summaryLabel, { color: pathwayColor }]}>Discuss together</Text>
               {aiSummary.questions.map((q, i) => (
                 <View key={i} style={styles.questionRow}>
-                  <Text style={styles.questionNumber}>{i + 1}</Text>
+                  <Text style={[styles.questionNumber, { color: pathwayColor }]}>{i + 1}</Text>
                   <Text style={styles.questionText}>{q}</Text>
                 </View>
               ))}
+
+              <TouchableOpacity
+                style={[styles.nextDayBtn, { backgroundColor: pathwayColor }]}
+                onPress={advanceToNextDay}
+              >
+                <Text style={styles.nextDayBtnText}>Continue to Day {today.day + 1} →</Text>
+              </TouchableOpacity>
             </View>
           </>
         )}
 
-        <View style={{ height: 40 }} />
+        <View style={{ height: 100 }} />
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -366,21 +428,25 @@ Respond ONLY as JSON: {"commonGround": "...", "questions": ["...", "...", "..."]
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: '#FAF6F0' },
   content: { backgroundColor: '#FAF6F0', paddingBottom: 60 },
-  emptyText: { textAlign: 'center', color: '#8B6347', fontSize: 16, marginTop: 40, paddingHorizontal: 32, lineHeight: 26 },
+
+  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 40, marginTop: 60 },
+  emptyIcon: { fontSize: 48, marginBottom: 16 },
+  emptyTitle: { fontSize: 20, fontWeight: '700', color: '#3D2B1F', marginBottom: 12 },
+  emptyText: { fontSize: 15, color: '#8B6347', textAlign: 'center', lineHeight: 24 },
 
   dayTagRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 24, marginBottom: 20, gap: 10 },
-  dayTag: { backgroundColor: '#A0522D', borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4 },
+  dayTag: { borderRadius: 20, paddingHorizontal: 12, paddingVertical: 4 },
   dayTagText: { color: '#FFF8F0', fontSize: 12, fontWeight: '700', letterSpacing: 0.5 },
   themeText: { fontSize: 14, color: '#6B4C35', fontWeight: '500', flex: 1 },
 
   verseBlock: { flexDirection: 'row', marginHorizontal: 20, marginBottom: 20, backgroundColor: '#FDF3E7', borderRadius: 16, overflow: 'hidden' },
-  verseAccent: { width: 4, backgroundColor: '#A0522D' },
+  verseAccent: { width: 4 },
   verseContent: { flex: 1, padding: 16 },
-  verseRef: { fontSize: 12, fontWeight: '700', color: '#A0522D', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 },
+  verseRef: { fontSize: 12, fontWeight: '700', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 8 },
   verseFullText: { fontSize: 16, lineHeight: 26, color: '#3D2B1F', fontStyle: 'italic' },
 
   promptBlock: { paddingHorizontal: 20, marginBottom: 24 },
-  promptLabel: { fontSize: 11, fontWeight: '700', color: '#A0522D', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 8 },
+  promptLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 8 },
   promptText: { fontSize: 17, lineHeight: 28, color: '#3D2B1F', fontWeight: '500' },
 
   devotionalBlock: {
@@ -389,10 +455,10 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: '#EDE0D4',
     shadowColor: '#8B6347', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 10, elevation: 2,
   },
-  devotionalLabel: { fontSize: 11, fontWeight: '700', color: '#A0522D', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 14 },
+  devotionalLabel: { fontSize: 11, fontWeight: '700', letterSpacing: 1.5, textTransform: 'uppercase', marginBottom: 14 },
   devotionalText: { fontSize: 15, lineHeight: 28, color: '#3D2B1F', marginBottom: 14 },
   readMoreBtn: { alignSelf: 'flex-start', paddingTop: 4 },
-  readMoreText: { fontSize: 13, color: '#A0522D', fontWeight: '600' },
+  readMoreText: { fontSize: 13, fontWeight: '600' },
 
   dividerRow: { flexDirection: 'row', alignItems: 'center', marginHorizontal: 20, marginBottom: 24 },
   dividerLine: { flex: 1, height: 1, backgroundColor: '#E8D9C5' },
@@ -430,20 +496,22 @@ const styles = StyleSheet.create({
   generatingText: { fontSize: 14, color: '#6B3A2A', fontStyle: 'italic', flex: 1 },
 
   input: { minHeight: 130, fontSize: 15, lineHeight: 26, color: '#3D2B1F', padding: 0, marginBottom: 16 },
-  button: { backgroundColor: '#A0522D', borderRadius: 14, paddingVertical: 15, alignItems: 'center' },
+  button: { borderRadius: 14, paddingVertical: 15, alignItems: 'center' },
   buttonDisabled: { opacity: 0.3 },
   buttonText: { color: '#FFF8F0', fontWeight: '700', fontSize: 15, letterSpacing: 0.3 },
 
   summaryCard: {
     marginHorizontal: 20, borderRadius: 18, padding: 20,
-    backgroundColor: '#FDF3E7', borderWidth: 1.5, borderColor: '#C8956C',
+    backgroundColor: '#FDF3E7', borderWidth: 1.5,
     shadowColor: '#8B6347', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 2,
   },
-  summaryEyebrow: { fontSize: 11, fontWeight: '700', color: '#A0522D', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 6 },
+  summaryEyebrow: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 6 },
   summaryTitle: { fontSize: 17, fontWeight: '700', color: '#3D2B1F', marginBottom: 16, lineHeight: 24 },
-  summaryLabel: { fontSize: 11, fontWeight: '700', color: '#A0522D', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 8, marginTop: 14 },
+  summaryLabel: { fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1.5, marginBottom: 8, marginTop: 14 },
   summaryText: { fontSize: 15, lineHeight: 26, color: '#3D2B1F' },
   questionRow: { flexDirection: 'row', marginBottom: 12, gap: 10 },
-  questionNumber: { fontSize: 13, fontWeight: '800', color: '#A0522D', width: 18, marginTop: 2 },
+  questionNumber: { fontSize: 13, fontWeight: '800', width: 18, marginTop: 2 },
   questionText: { fontSize: 15, lineHeight: 24, color: '#5C4033', fontStyle: 'italic', flex: 1 },
+  nextDayBtn: { marginTop: 20, borderRadius: 14, paddingVertical: 14, alignItems: 'center' },
+  nextDayBtnText: { color: '#FFF8F0', fontWeight: '700', fontSize: 15 },
 });
